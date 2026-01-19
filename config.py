@@ -147,7 +147,14 @@ HUGGINGFACE_API_URL_IMAGENET = "https://router.huggingface.co/hf-inference/model
 # NOTE: Using a function for lazy loading - ensures Railway env vars are read at runtime!
 def get_huggingface_token():
     """Get Hugging Face API token from environment (lazy load for Railway compatibility)."""
-    return os.getenv("HUGGINGFACE_API_TOKEN")
+    token = os.getenv("HUGGINGFACE_API_TOKEN")
+    # Debug: show what we found
+    if token:
+        print(f"DEBUG CONFIG: Token found, starts with: {token[:10]}...")
+    else:
+        print("DEBUG CONFIG: HUGGINGFACE_API_TOKEN not found in environment!")
+        print(f"DEBUG CONFIG: Available env vars with 'HUG' or 'TOKEN': {[k for k in os.environ.keys() if 'HUG' in k.upper() or 'TOKEN' in k.upper()]}")
+    return token
 
 # For backward compatibility - but prefer get_huggingface_token() in new code
 HUGGINGFACE_API_TOKEN = None  # Will be set dynamically
