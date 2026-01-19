@@ -64,6 +64,15 @@ class FoodClassifier:
         """Generic API query function."""
         max_retries = 3
         headers = get_huggingface_headers()  # Get fresh headers with token at request time
+        
+        # Debug logging for Railway
+        print(f"DEBUG: Headers keys: {list(headers.keys())}")
+        if 'Authorization' in headers:
+            token_preview = headers['Authorization'][:20] + "..."
+            print(f"DEBUG: Auth header present: {token_preview}")
+        else:
+            print("DEBUG: NO Authorization header - token not found!")
+        
         for i in range(max_retries):
             try:
                 response = requests.post(url, headers=headers, data=image_bytes)
