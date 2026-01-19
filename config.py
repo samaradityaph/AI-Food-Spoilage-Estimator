@@ -144,15 +144,27 @@ HUGGINGFACE_API_URL_IMAGENET = "https://router.huggingface.co/hf-inference/model
 
 # API Token: Read from environment variable (DO NOT HARDCODE!)
 # Set via .env file or docker-compose environment
-HUGGINGFACE_API_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
+# NOTE: Using a function for lazy loading - ensures Railway env vars are read at runtime!
+def get_huggingface_token():
+    """Get Hugging Face API token from environment (lazy load for Railway compatibility)."""
+    return os.getenv("HUGGINGFACE_API_TOKEN")
 
-# Headers for API requests
+# For backward compatibility - but prefer get_huggingface_token() in new code
+HUGGINGFACE_API_TOKEN = None  # Will be set dynamically
+
+def get_huggingface_headers():
+    """Get API headers with current token (lazy load for Railway compatibility)."""
+    token = get_huggingface_token()
+    headers = {"Content-Type": "application/octet-stream"}  # Router API requires this
+    if token and token.strip():
+        headers["Authorization"] = f"Bearer {token.strip()}"
+    else:
+        print("WARNING: HUGGINGFACE_API_TOKEN not set in environment!")
+    return headers
+
+# For backward compatibility - this is now a function call result
+# But callers should use get_huggingface_headers() directly
 HUGGINGFACE_HEADERS = {}
-if HUGGINGFACE_API_TOKEN and HUGGINGFACE_API_TOKEN.strip():
-    HUGGINGFACE_HEADERS["Authorization"] = f"Bearer {HUGGINGFACE_API_TOKEN.strip()}"
-
-# Router API requires Content-Type for binary uploads
-HUGGINGFACE_HEADERS["Content-Type"] = "application/octet-stream"
 
 # Random Forest hyperparameters
 RF_N_ESTIMATORS = 100

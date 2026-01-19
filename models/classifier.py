@@ -24,7 +24,7 @@ from config import (
     TARGET_CATEGORIES,
     HUGGINGFACE_API_URL_FOOD101,
     HUGGINGFACE_API_URL_IMAGENET,
-    HUGGINGFACE_HEADERS,
+    get_huggingface_headers,  # Lazy-loaded for Railway compatibility
     DEFAULT_CATEGORY,
     FOOD101_TO_CATEGORY,
 )
@@ -63,9 +63,10 @@ class FoodClassifier:
     def _query(self, url: str, image_bytes: bytes) -> List[Dict]:
         """Generic API query function."""
         max_retries = 3
+        headers = get_huggingface_headers()  # Get fresh headers with token at request time
         for i in range(max_retries):
             try:
-                response = requests.post(url, headers=HUGGINGFACE_HEADERS, data=image_bytes)
+                response = requests.post(url, headers=headers, data=image_bytes)
                 if response.status_code == 200:
                     try: return response.json()
                     except json.JSONDecodeError: raise RuntimeError(f"Invalid JSON: {response.text}")
