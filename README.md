@@ -1,136 +1,130 @@
-# Food Shelf Life Predictor
+# Food Freshness Predictor
 
-An AI-powered system that classifies food images and predicts remaining shelf life based on storage conditions.
+> AI-powered food classification and storage life prediction using computer vision.
+
+Upload a photo of any food item, and the system will identify it and tell you how long it will stay fresh based on your storage conditions.
 
 ## Features
 
-- **Food Image Classification**: Uses EfficientNet-B0 to classify images into 4 categories: apple, banana, bread, milk
-- **Shelf Life Prediction**: RandomForestRegressor predicts remaining days based on temperature, humidity, and storage type
-- **Data-Driven Approach**: Shelf life calculations based on USDA FoodKeeper data and Q10 temperature coefficients
-- **Interactive Web Interface**: Streamlit app for easy image upload and predictions
+- **Hybrid AI Classification**: Uses both Food-101 and ImageNet models for maximum accuracy
+- **15 Food Categories**: Apple, Banana, Bread, Milk, Pasta, Pizza, Burger, Sushi, Meat, Fish, Egg, Vegetable, Fruit, Rice, Cake
+- **Shelf Life Prediction**: RandomForest model predicts remaining days based on temperature, humidity, and storage type
+- **Science-Based**: Calculations based on USDA FoodKeeper data and Q10 temperature coefficients
+- **Docker Ready**: One-command deployment with `docker-compose up`
 
-## Installation
+## Quick Start
 
-1. **Clone/Download** the project to your local machine
+### Option 1: Docker (Recommended)
 
-2. **Create a virtual environment** (recommended):
-```powershell
-python -m venv venv
-venv\Scripts\activate
-```
+1. **Clone the repo** and create `.env`:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your Hugging Face token
+   ```
 
-3. **Install dependencies**:
-```powershell
-pip install -r requirements.txt
-```
+2. **Run with Docker**:
+   ```bash
+   docker-compose up --build
+   ```
 
-## Usage
+3. **Open** [http://localhost:5000](http://localhost:5000)
 
-### Run the Streamlit App
+### Option 2: Local Python
 
-```powershell
-streamlit run app.py
-```
+1. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-This will:
-1. Open a browser window at `http://localhost:8501`
-2. Allow you to upload food images
-3. Adjust storage parameters (temperature, humidity, storage type)
-4. Display classification results and predicted shelf life
+2. **Set environment variable**:
+   ```bash
+   # Windows PowerShell
+   $env:HUGGINGFACE_API_TOKEN = "hf_your_token_here"
+   
+   # Linux/Mac
+   export HUGGINGFACE_API_TOKEN="hf_your_token_here"
+   ```
 
-### Command-Line Usage
+3. **Run the Flask app**:
+   ```bash
+   python app_flask.py
+   ```
 
-```python
-from models.classifier import load_food_classifier
-from models.shelf_life_predictor import ShelfLifePredictor
+4. **Open** [http://localhost:5000](http://localhost:5000)
 
-# Classify a food image
-classifier = load_food_classifier()
-category, confidence, scores = classifier.classify("path/to/food_image.jpg")
-print(f"Detected: {category} ({confidence:.1%})")
+## Environment Variables
 
-# Predict shelf life
-predictor = ShelfLifePredictor()
-predictor.train()  # First time only
-
-days = predictor.predict(
-    food_category="apple",
-    temperature=4,       # Celsius
-    humidity=60,         # Percent
-    storage_type="refrigerated"
-)
-print(f"Shelf life: {days:.1f} days")
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `HUGGINGFACE_API_TOKEN` | Yes | Get free at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
 
 ## Project Structure
 
 ```
-Shelf Life Predictor/
-├── app.py                 # Streamlit web interface
-├── config.py              # Configuration and constants
+food-freshness-predictor/
+├── app_flask.py           # Flask web server
+├── config.py              # All configuration constants
 ├── requirements.txt       # Python dependencies
-├── README.md              # This file
-├── data/
-│   └── food_shelf_life_data.csv  # Generated training dataset
+├── Dockerfile             # Container definition
+├── docker-compose.yml     # Docker orchestration
+├── .env.example           # Environment template
+├── .gitignore             # Git exclusions
 ├── models/
-│   ├── __init__.py
-│   ├── classifier.py             # EfficientNet-B0 food classifier
-│   ├── shelf_life_predictor.py   # RandomForest regressor
-│   └── trained_rf_model.joblib   # Saved model (after training)
-└── utils/
-    ├── __init__.py
-    ├── data_loader.py            # Dataset loading and generation
-    └── preprocessing.py          # Image preprocessing
+│   ├── classifier.py      # Hybrid HuggingFace API classifier
+│   └── shelf_life_predictor.py  # RandomForest regressor
+├── utils/
+│   └── data_loader.py     # Dataset generation
+├── templates/
+│   └── index.html         # Web UI
+└── data/                  # Generated training data (gitignored)
 ```
 
-## Technical Details
+## How It Works
 
-### Food Classification
-- **Model**: EfficientNet-B0 (pretrained on ImageNet)
-- **Categories**: apple, banana, bread, milk
-- **Input**: 224x224 RGB images
-- **Output**: Category prediction with confidence score
+### Food Classification (Hybrid Approach)
+1. **Primary**: Queries `Kaludi/food-category-classification-v2.0` (Food-101 model) - Best for prepared dishes
+2. **Fallback**: If confidence is low, queries `google/efficientnet-b0` (ImageNet) - Best for raw ingredients
+3. **Result**: Returns the highest-confidence match from either model
 
 ### Shelf Life Prediction
 - **Model**: RandomForestRegressor (scikit-learn)
-- **Features**: 
-  - Food category (one-hot encoded)
-  - Temperature (normalized)
-  - Humidity (normalized)
-  - Storage type (one-hot encoded)
-- **Target**: Days to spoilage
-- **Metrics**: MAE and RMSE
+- **Features**: Food category, temperature, humidity, storage type
+- **Science**: Uses Q10 temperature coefficient for accurate decay modeling
 
-### Data Science Approach
-- Shelf life modeling uses the Q10 temperature coefficient (standard in food science)
-- Base shelf life values from USDA FoodKeeper Application
-- Temperature effects modeled using Arrhenius equation principles
+## Supported Foods
 
-## Evaluation Metrics
+| Category | Example Items | Refrigerated Shelf Life |
+|----------|---------------|-------------------------|
+| Apple | Whole apples, apple pie | 21 days |
+| Banana | Fresh bananas | 5 days |
+| Bread | Loaves, toast, bagels | 7 days |
+| Milk | Dairy products | 7 days |
+| Pasta | Spaghetti, lasagna, ramen | 4 days |
+| Pizza | Leftover pizza | 4 days |
+| Burger | Hamburgers, hot dogs | 3 days |
+| Sushi | Sushi, sashimi | 1 day |
+| Meat | Steak, pork, chicken | 4 days |
+| Fish | Salmon, tuna, seafood | 2 days |
+| Egg | Eggs, omelettes | 28 days |
+| Vegetable | Salads, fresh veggies | 7 days |
+| Fruit | Berries, cut fruit | 5 days |
+| Rice | Cooked rice, risotto | 5 days |
+| Cake | Cakes, desserts | 5 days |
 
-After training, the model reports:
-- **MAE (Mean Absolute Error)**: Average prediction error in days
-- **RMSE (Root Mean Squared Error)**: Error metric penalizing larger errors
-- **Cross-Validation MAE**: Model generalization performance
+## Tech Stack
 
-## Dependencies
-
-- PyTorch >= 2.0.0
-- torchvision >= 0.15.0
-- timm >= 0.9.0 (PyTorch Image Models)
-- streamlit >= 1.28.0
-- scikit-learn >= 1.3.0
-- pandas >= 2.0.0
-- numpy >= 1.24.0
-- Pillow >= 10.0.0
+- **Backend**: Python, Flask
+- **AI**: Hugging Face Inference API (no local GPU required)
+- **ML**: scikit-learn (RandomForest)
+- **Frontend**: HTML/CSS/JavaScript
+- **Deployment**: Docker, docker-compose
 
 ## License
 
-This project is for educational and research purposes.
+MIT License - Free for educational and commercial use.
 
 ## References
 
-- EfficientNet: Tan & Le, "EfficientNet: Rethinking Model Scaling for CNNs", ICML 2019
 - Food-101: Bossard et al., "Food-101 – Mining Discriminative Components", ECCV 2014
 - Q10 Temperature Coefficient: Labuza, T.P. (1982). "Shelf Life Dating of Foods"
 - USDA FoodKeeper Application Data

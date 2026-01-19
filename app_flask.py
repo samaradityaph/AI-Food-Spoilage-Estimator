@@ -11,6 +11,7 @@ Features:
 - Editable food type override
 - Dynamic shelf life prediction
 - Modern, responsive UI design
+- Production-ready security hardening
 
 Usage:
     python app_flask.py
@@ -21,7 +22,12 @@ Then open: http://localhost:5000
 import os
 import io
 import base64
+import logging
 from pathlib import Path
+from functools import wraps
+from collections import defaultdict
+import time
+
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from PIL import Image
@@ -38,15 +44,107 @@ from config import (
     FROZEN_MULTIPLIER,
 )
 
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# SECURITY CONFIGURATION
+# =============================================================================
+
+# Environment detection
+IS_PRODUCTION = os.getenv('FLASK_ENV', 'production') == 'production'
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', '*').split(',')  # Comma-separated list
+
+# Rate limiting configuration
+RATE_LIMIT_REQUESTS = int(os.getenv('RATE_LIMIT_REQUESTS', '60'))  # requests
+RATE_LIMIT_WINDOW = int(os.getenv('RATE_LIMIT_WINDOW', '60'))  # seconds
+request_counts = defaultdict(list)  # IP -> list of timestamps
+
+# Maximum upload size (10MB)
+MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH', str(10 * 1024 * 1024)))
+
 # Initialize Flask app
 app = Flask(__name__, 
             template_folder='templates',
             static_folder='static')
-CORS(app)
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+
+# Configure CORS - restrict in production
+if IS_PRODUCTION:
+    CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=False)
+else:
+    CORS(app)  # Allow all in development
 
 # Lazy loaded models
 _classifier = None
 _predictor = None
+
+
+# =============================================================================
+# SECURITY MIDDLEWARE
+# =============================================================================
+
+def get_client_ip():
+    """Get client IP, respecting Railway's proxy headers."""
+    if request.headers.get('X-Forwarded-For'):
+        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    return request.remote_addr or '127.0.0.1'
+
+
+def rate_limit():
+    """Simple in-memory rate limiter."""
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            client_ip = get_client_ip()
+            now = time.time()
+            
+            # Clean old entries
+            request_counts[client_ip] = [
+                ts for ts in request_counts[client_ip] 
+                if now - ts < RATE_LIMIT_WINDOW
+            ]
+            
+            # Check rate limit
+            if len(request_counts[client_ip]) >= RATE_LIMIT_REQUESTS:
+                logger.warning(f"Rate limit exceeded for IP: {client_ip}")
+                return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
+            
+            # Record this request
+            request_counts[client_ip].append(now)
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    # Prevent clickjacking
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    # Prevent MIME type sniffing
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    # Enable XSS filter
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    # Referrer policy
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    # Content Security Policy (allow inline for our simple UI)
+    if IS_PRODUCTION:
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self';"
+        )
+    return response
 
 
 # =============================================================================
@@ -204,10 +302,12 @@ def compute_shelf_life_for_food(
 @app.route('/')
 def index():
     """Serve the main page."""
+    logger.info(f"Home page accessed from {get_client_ip()}")
     return render_template('index.html')
 
 
 @app.route('/api/classify', methods=['POST'])
+@rate_limit()
 def classify_image():
     """
     Classify an uploaded food image using EfficientNet-B0.
@@ -274,6 +374,7 @@ def classify_image():
 
 
 @app.route('/api/predict', methods=['POST'])
+@rate_limit()
 def predict_shelf_life():
     """
     Predict shelf life for given food and conditions.
@@ -344,6 +445,9 @@ def preload_models():
         _classifier = None
 
 
+# Pre-load models when imported by Gunicorn
+preload_models()
+
 if __name__ == '__main__':
     # Ensure template and static directories exist
     (PROJECT_ROOT / 'templates').mkdir(exist_ok=True)
@@ -352,13 +456,18 @@ if __name__ == '__main__':
     print("=" * 60)
     print("Food Shelf Life Predictor - Flask Server")
     print("=" * 60)
+    print(f"Environment: {'PRODUCTION' if IS_PRODUCTION else 'DEVELOPMENT'}")
+    print(f"Rate Limit: {RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_WINDOW} seconds")
     
-    # Pre-load models BEFORE starting Flask
-    preload_models()
+    # Note: Models are already preloaded at import time
     
-    print("\nStarting server at http://localhost:5000")
+    # Get port from environment (Railway sets PORT)
+    port = int(os.getenv('PORT', 5000))
+    debug = not IS_PRODUCTION
+    
+    print(f"\nStarting server at http://localhost:{port}")
+    print(f"Debug mode: {debug}")
     print("Press Ctrl+C to stop\n")
     
-    # Enable reloader for development
-    # Threaded=True is fine for API calls
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
+    # NEVER use debug=True in production!
+    app.run(debug=debug, host='0.0.0.0', port=port, threaded=True)

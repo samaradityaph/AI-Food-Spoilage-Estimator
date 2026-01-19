@@ -1,34 +1,55 @@
+# =============================================================================
+# Production Dockerfile for Railway Deployment
+# Security Hardened Configuration
+# =============================================================================
+
 # Use an official Python runtime as a parent image
-# Using slim version to keep image size smaller
 FROM python:3.9-slim
 
-# Set environment variables
-# PYTHONDONTWRITEBYTECODE: Prevents Python from writing pyc files to disc
-# PYTHONUNBUFFERED: Prevents Python from buffering stdout and stderr
+# Set environment variables for security and performance
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV FLASK_ENV=production
+ENV PORT=5000
 
-# Set the working directory in the container
+# Create non-root user for security (Railway best practice)
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
+# Set the working directory
 WORKDIR /app
 
 # Install system dependencies
-# gcc and python3-dev might be needed for some python packages
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copy the requirements file into the container at /app
+# Copy requirements first for better caching
 COPY requirements.txt /app/
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir gunicorn
 
-# Copy the rest of the application code
+# Copy application code
 COPY . /app/
 
-# Make port 5000 available to the world outside this container
-EXPOSE 5000
+# Create necessary directories with correct permissions
+RUN mkdir -p /app/data /app/models \
+    && chown -R appuser:appgroup /app
 
-# Run app_flask.py when the container launches
-CMD ["python", "app_flask.py"]
+# Switch to non-root user
+USER appuser
+
+# Health check for Railway
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/api/foods || exit 1
+
+# Expose port (Railway uses PORT env variable)
+EXPOSE ${PORT}
+
+# Run with Gunicorn for production (NOT Flask dev server)
+CMD gunicorn --bind 0.0.0.0:${PORT} --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile - app_flask:app
